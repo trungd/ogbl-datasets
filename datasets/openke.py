@@ -32,9 +32,9 @@ class OpenKE(BaseDataset):
                 lines = f.read().split('\n')[1:]
                 triples = [[int(x) for x in (l.split('\t') if '\t' in l else l.split(' '))] for l in lines if l]
                 setattr(self, f"{mode}_triples", dict(
-                    head=np.array([x[0] for x in triples]),
-                    tail=np.array([x[1] for x in triples]),
-                    relation=np.array([x[2] for x in triples]),
+                    head=[x[0] for x in triples],
+                    tail=[x[1] for x in triples],
+                    relation=[x[2] for x in triples],
                     head_type=[None for _ in triples],
                     tail_type=[None for _ in triples]
                 ))

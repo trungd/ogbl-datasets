@@ -1,6 +1,6 @@
 from collections import defaultdict
 
-from .base import BaseDataset
+from .base import Basefset
 from ogb.linkproppred import LinkPropPredDataset, Evaluator
 
 
