@@ -72,7 +72,7 @@ class KGEModel(nn.Module):
             )
         
         #Do not forget to modify this line when you add a new model in the "forward" function
-        if model_name not in ['TransE', 'DistMult', 'ComplEx', 'RotatE', 'PairRE', 'TuckER', 'Groups']:
+        if model_name not in ['TransE', 'DistMult', 'ComplEx', 'RotatE', 'PairRE', 'TuckER', 'Groups', 'RE']:
             raise ValueError('model %s not supported' % model_name)
 
         if model_name in ['RotatE','Groups'] and (not double_entity_embedding or double_relation_embedding):
@@ -80,6 +80,9 @@ class KGEModel(nn.Module):
 
         if model_name == 'ComplEx' and (not double_entity_embedding or not double_relation_embedding):
             raise ValueError('ComplEx should use --double_entity_embedding and --double_relation_embedding')
+
+        if model_name in ['PairRE','RE'] and not double_relation_embedding:
+            raise ValueError('PairRE and RE should use --double_relation_embedding')
 
         self.evaluator = evaluator
         
@@ -169,7 +172,8 @@ class KGEModel(nn.Module):
             'RotatE': self.RotatE,
             'PairRE': self.PairRE,
             'TuckER': self.TuckER,
-            'Groups': self.Groups
+            'Groups': self.Groups,
+            'RE': self.RE,
         }
         
         if self.model_name in model_func:
@@ -272,6 +276,14 @@ class KGEModel(nn.Module):
             score = torch.einsum('htr,bih,bnt,bir->bn', self.tensor_weights, head, tail, relation)
 
         return self.gamma.item() - score
+
+    def RE(self, head, relation, tail, mode):
+        re_head, re_tail = torch.chunk(relation, 2, dim=2)
+        if mode == 'head-batch':
+            score = head * re_head
+        else:
+            score = tail * re_tail
+        return torch.sum(score, dim=2)
 
     @staticmethod
     def train_step(model, optimizer, train_iterator, args):
