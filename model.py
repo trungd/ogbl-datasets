@@ -24,6 +24,7 @@ class KGEModel(nn.Module):
                  double_entity_embedding=False, double_relation_embedding=False):
         super(KGEModel, self).__init__()
         self.model_name = model_name
+        self.args = args
         self.nentity = nentity
         self.nrelation = nrelation
         self.hidden_dim = hidden_dim
@@ -41,33 +42,41 @@ class KGEModel(nn.Module):
         
         self.entity_dim = hidden_dim*2 if double_entity_embedding else hidden_dim
         self.relation_dim = hidden_dim*2 if double_relation_embedding else hidden_dim
-        
-        self.entity_embedding = nn.Parameter(torch.zeros(nentity, self.entity_dim))
-        nn.init.uniform_(
-            tensor=self.entity_embedding, 
-            a=-self.embedding_range.item(), 
-            b=self.embedding_range.item()
-        )
-        
-        self.relation_embedding = nn.Parameter(
-            torch.zeros(nrelation, self.relation_dim),
-            requires_grad=not (args.freeze_relation_emb or args.no_reltype))
 
         if args.no_reltype:
-            pass
-        else:
+            self.nrelation = 1
+
+        self.entity_embedding = nn.Parameter(torch.zeros(self.nentity, self.entity_dim))
+        nn.init.uniform_(
+            tensor=self.entity_embedding,
+            a=-self.embedding_range.item(),
+            b=self.embedding_range.item()
+        )
+
+        self.relation_embedding = nn.Parameter(
+            torch.zeros(self.nrelation, self.relation_dim),
+            requires_grad=not args.freeze_relation_emb)
+        nn.init.uniform_(
+            tensor=self.relation_embedding,
+            a=-self.embedding_range.item() * args.rel_init_scale,
+            b=self.embedding_range.item() * args.rel_init_scale
+        )
+
+        if model_name in ['TuckER', 'Groups']:
+            self.tensor_weights = nn.Parameter(
+                torch.zeros(self.hidden_dim,self.hidden_dim,self.hidden_dim)) # head x tail x rel
             nn.init.uniform_(
-                tensor=self.relation_embedding,
-                a=-self.embedding_range.item(),
-                b=self.embedding_range.item()
+                tensor=self.tensor_weights,
+                a=-self.embedding_range.item() * args.rel_init_scale,
+                b=self.embedding_range.item() * args.rel_init_scale,
             )
         
         #Do not forget to modify this line when you add a new model in the "forward" function
-        if model_name not in ['TransE', 'DistMult', 'ComplEx', 'RotatE']:
+        if model_name not in ['TransE', 'DistMult', 'ComplEx', 'RotatE', 'PairRE', 'TuckER', 'Groups']:
             raise ValueError('model %s not supported' % model_name)
-            
-        if model_name == 'RotatE' and (not double_entity_embedding or double_relation_embedding):
-            raise ValueError('RotatE should use --double_entity_embedding')
+
+        if model_name in ['RotatE','Groups'] and (not double_entity_embedding or double_relation_embedding):
+            raise ValueError('%s should use --double_entity_embedding' % model_name)
 
         if model_name == 'ComplEx' and (not double_entity_embedding or not double_relation_embedding):
             raise ValueError('ComplEx should use --double_entity_embedding and --double_relation_embedding')
@@ -91,19 +100,19 @@ class KGEModel(nn.Module):
             head = torch.index_select(
                 self.entity_embedding, 
                 dim=0, 
-                index=sample[:,0]
+                index=sample[:, 0]
             ).unsqueeze(1)
             
             relation = torch.index_select(
                 self.relation_embedding, 
                 dim=0, 
-                index=sample[:,1]
+                index=sample[:, 1]
             ).unsqueeze(1)
             
             tail = torch.index_select(
                 self.entity_embedding, 
                 dim=0, 
-                index=sample[:,2]
+                index=sample[:, 2]
             ).unsqueeze(1)
             
         elif mode == 'head-batch':
@@ -158,6 +167,9 @@ class KGEModel(nn.Module):
             'DistMult': self.DistMult,
             'ComplEx': self.ComplEx,
             'RotatE': self.RotatE,
+            'PairRE': self.PairRE,
+            'TuckER': self.TuckER,
+            'Groups': self.Groups
         }
         
         if self.model_name in model_func:
@@ -231,6 +243,35 @@ class KGEModel(nn.Module):
 
         score = self.gamma.item() - score.sum(dim = 2)
         return score
+
+    def PairRE(self, head, relation, tail, mode):
+        re_head, re_tail = torch.chunk(relation, 2, dim=2)
+
+        head = F.normalize(head, 2, -1)
+        tail = F.normalize(tail, 2, -1)
+
+        score = head * re_head - tail * re_tail
+        score = self.gamma.item() - torch.norm(score, p=1, dim=2)
+        return score
+
+    def Groups(self, head, relation, tail, mode):
+        head_h, head_t = torch.chunk(head, 2, dim=2)
+        tail_h, tail_t = torch.chunk(tail, 2, dim=2)
+
+        if mode == 'head-batch':
+            score = torch.einsum('htr,bnh,bit,bir->bn', self.tensor_weights, head_h, tail_t, relation)
+        else:
+            score = torch.einsum('htr,bih,bnt,bir->bn', self.tensor_weights, head_h, tail_t, relation)
+
+        return self.gamma.item() - score
+
+    def TuckER(self, head, relation, tail, mode):
+        if mode == 'head-batch':
+            score = torch.einsum('htr,bnh,bit,bir->bn', self.tensor_weights, head, tail, relation)
+        else:
+            score = torch.einsum('htr,bih,bnt,bir->bn', self.tensor_weights, head, tail, relation)
+
+        return self.gamma.item() - score
 
     @staticmethod
     def train_step(model, optimizer, train_iterator, args):

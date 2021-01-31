@@ -26,6 +26,20 @@ class TrainDataset(Dataset):
         self.entity_dict = ds.entity_dict
 
         train_count = defaultdict(lambda: 4)
+
+        if self.args.new_edge_type:
+            for i in range(int(self.args.new_edge_frac * len(self.triples['head']))):
+                head_type = random.choice(list(self.entity_dict.keys()) or [None])
+                tail_type = random.choice(list(self.entity_dict.keys()) or [None])
+                head = random.randint(0, self.entity_dict[head_type][1] - self.entity_dict[head_type][0] - 1)
+                tail = random.randint(0, self.entity_dict[tail_type][1] - self.entity_dict[tail_type][0] - 1)
+                relation = self.nrelation - 1
+                ds.train_triples['head'].append(head)
+                ds.train_triples['tail'].append(tail)
+                ds.train_triples['relation'].append(relation)
+                ds.train_triples['head_type'].append(head_type)
+                ds.train_triples['tail_type'].append(tail_type)
+
         for i in range(len(ds.train_triples['head'])):
             head, relation, tail = ds.train_triples['head'][i], ds.train_triples['relation'][i], \
                                    ds.train_triples['tail'][i]
@@ -37,20 +51,17 @@ class TrainDataset(Dataset):
 
     def __len__(self):
         if self.args.new_edge_type:
-            return len(self.triples['head']) + int(self.args.new_edge_frac * len(self.triples['head']))
+            return len(self.triples['head'])
         return len(self.triples['head'])
 
     def __getitem__(self, idx):
         ds = self.ds
-        if self.args.new_edge_type and idx >= len(self.triples['head']):
-            head_type = random.choice(list(self.entity_dict.keys()))
-            tail_type = random.choice(list(self.entity_dict.keys()))
-            head = random.randint(0, self.entity_dict[head_type][1] - self.entity_dict[head_type][0] - 1)
-            tail = random.randint(0, self.entity_dict[tail_type][1] - self.entity_dict[tail_type][0] - 1)
-            relation = self.nrelation - 1
-        else:
-            head, relation, tail = self.triples['head'][idx], self.triples['relation'][idx], self.triples['tail'][idx]
-            head_type, tail_type = self.triples['head_type'][idx], self.triples['tail_type'][idx]
+
+        head, relation, tail = self.triples['head'][idx], self.triples['relation'][idx], self.triples['tail'][idx]
+        head_type, tail_type = self.triples['head_type'][idx], self.triples['tail_type'][idx]
+
+        if self.args.no_reltype:
+            relation = 0
 
         positive_sample = [ds.get_head(head, head_type), relation, ds.get_tail(tail, tail_type)]
 
@@ -85,6 +96,7 @@ class TestDataset(Dataset):
         self.ds = ds
         self.nentity = ds.nentity
         self.nrelation = ds.nrelation
+        self.args = args
 
         self.mode = mode
         self.random_sampling = random_sampling
@@ -103,6 +115,9 @@ class TestDataset(Dataset):
             head_type, tail_type = self.triples['head_type'][idx], self.triples['tail_type'][idx]
         else:
             head_type = tail_type = None
+
+        if self.args.no_reltype:
+            relation = 0
 
         positive_sample = torch.LongTensor((ds.get_head(head, head_type), relation, ds.get_tail(tail, tail_type)))
 

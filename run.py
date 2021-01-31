@@ -27,11 +27,6 @@ import time
 from tensorboardX import SummaryWriter
 import pdb
 
-from datasets.biokg import BioKG
-from datasets.wikikg2 import WikiKG2
-from datasets.fb15k import FB15K
-from datasets.fb15k237 import FB15K237
-
 
 def parse_args(args=None):
     parser = argparse.ArgumentParser(
@@ -62,6 +57,8 @@ def parse_args(args=None):
     parser.add_argument('--test_batch_size', default=4, type=int, help='valid/test batch size')
     parser.add_argument('--uni_weight', action='store_true', 
                         help='Otherwise use subsampling weighting like in word2vec')
+    parser.add_argument('--rel_init_scale', default=1.0, type=float,
+                        help='scale initialization of the relation vectors')
     
     parser.add_argument('-lr', '--learning_rate', default=0.0001, type=float)
     parser.add_argument('-cpu', '--cpu_num', default=10, type=int)
@@ -178,20 +175,34 @@ def main(args):
         override_config(args)
 
     args.save_path = 'log/%s/%s/%s-%s/%s' % (args.dataset, args.model, args.hidden_dim, args.gamma, time.time()) \
-        if args.save_path is None else args.save_path
+        if args.save_path is None \
+        else 'log/%s/%s/%s-%s/%s' % (args.dataset, args.model, args.hidden_dim, args.gamma, args.save_path)
     writer = SummaryWriter(args.save_path)
     
     # Write logs to checkpoint and console
     set_logger(args)
 
     if args.dataset == 'ogbl-biokg':
+        from datasets.biokg import BioKG
         ds = BioKG(args)
     elif args.dataset == 'ogbl-wikikg2':
+        from datasets.wikikg2 import WikiKG2
         ds = WikiKG2(args)
     elif args.dataset == 'fb15k':
+        from datasets.fb15k import FB15K
         ds = FB15K(args)
     elif args.dataset == 'fb15k237':
+        from datasets.fb15k237 import FB15K237
         ds = FB15K237(args)
+    elif args.dataset == 'fb13':
+        from datasets.fb13 import FB13
+        ds = FB13(args)
+    elif args.dataset == 'wn11':
+        from datasets.wn11 import WN11
+        ds = WN11(args)
+    elif args.dataset == 'wn18':
+        from datasets.wn18 import WN18
+        ds = WN18(args)
 
     evaluator = Evaluator(name='ogbl-wikikg2')
     

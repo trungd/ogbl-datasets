@@ -10,7 +10,7 @@ import numpy as np
 from .openke import OpenKE
 
 
-class FB15K(OpenKE):
+class FB13(OpenKE):
     @property
     def dataset_name(self):
-        return 'FB15K'
+        return 'FB13'
